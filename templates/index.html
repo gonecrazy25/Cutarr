@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cutarr</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="/static/img/cutarr-icon.png">
+  <link href="/static/css/app.css?v=0.51" rel="stylesheet">
+  <script src="https://unpkg.com/wavesurfer.js@7"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <button id="settingsMenuButton" class="hamburgerButton" type="button" title="Settings" aria-label="Open settings" onclick="openSettings(event)">☰</button>
+      <img src="/static/img/cutarr-icon.png" alt="Cutarr logo" class="brandLogo">
+      <div>
+        <h1>Cutarr</h1>
+        <p>Split multi-episode TV recordings and DVD rips.</p>
+      </div>
+    </div>
+    <div class="topbarActions">
+      <div id="statusPill">Idle</div>
+      <button id="topLogoutButton" class="topLogoutButton" type="button" title="Logout" aria-label="Logout">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M10 5H6.7A2.7 2.7 0 0 0 4 7.7v8.6A2.7 2.7 0 0 0 6.7 19H10"></path>
+          <path d="M13.5 8.5L17 12l-3.5 3.5"></path>
+          <path d="M17 12H8"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="busyOverlay" class="hidden">
+    <div class="busyBox">
+      <h2 id="busyTitle">Processing</h2>
+      <p id="busyText">Working...</p>
+      <div class="indeterminate"><div></div></div>
+      <p class="small" id="busyHint">Large recordings may take a while.</p>
+      <button id="busyCancel" class="busyCancel hidden" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <div id="settingsOverlay" class="settingsOverlay hidden">
+    <div class="settingsPage panel">
+      <div class="settingsHeader">
+        <div>
+          <h2>Settings</h2>
+          <p class="small">Configure Cutarr behavior.</p>
+        </div>
+        <button id="settingsCloseButton" type="button" title="Close settings">✕</button>
+      </div>
+
+      <div class="settingsSection">
+        <h3>Cache</h3>
+        <label class="tooltipLabel" title="When Cutarr starts or the page loads, cached preview, waveform, and temp files older than this many days are deleted.">Cache cleanup time <span class="small">(days)</span></label>
+        <input id="cacheCleanupDays" type="number" value="1" min="0.01" step="0.25">
+        <p class="small">Default is 1 day. Lower values clean cache sooner; higher values keep cached previews/waveforms longer.</p>
+
+        <h3>Defaults</h3>
+        <label class="inlineCheck settingsCheck" title="Controls whether Split titles/credits is checked when Cutarr loads.">
+          <input id="defaultSplitTitlesCredits" type="checkbox" checked>
+          Default Split titles/credits on
+        </label>
+
+        <label class="inlineCheck settingsCheck" title="Controls whether Fast preview, no audio is checked when Cutarr loads.">
+          <input id="defaultFastPreviewNoAudio" type="checkbox" checked>
+          Default Fast preview, no audio on
+        </label>
+
+        <h3>Admin Password</h3>
+        <input id="currentAdminPassword" type="password" placeholder="Current password">
+        <input id="newAdminPassword" type="password" placeholder="New password">
+        <input id="confirmAdminPassword" type="password" placeholder="Confirm new password">
+        <div class="settingsActions">
+          <button id="changePasswordButton" type="button">Change Admin Password</button>
+          <button id="logoutButton" type="button">Logout</button>
+        </div>
+        <p id="passwordStatus" class="small"></p>
+
+        <div class="settingsActions">
+          <button id="saveSettingsButton" class="primary" type="button">Save Settings</button>
+          <button id="cleanCacheNowButton" type="button">Clean Cache Now</button>
+        </div>
+
+        <p id="settingsStatus" class="small"></p>
+      </div>
+    </div>
+  </div>
+
+  <main class="appShell">
+    <div class="leftColumn">
+    <aside class="mediaPane panel">
+      <div class="paneHeader">
+        <div>
+          <h2>Media Library</h2>
+          <p class="small">Browse mounted folders</p>
+        </div>
+        <button type="button" class="iconButton" onclick="browse(cwd)">↻</button>
+      </div>
+
+      <div id="breadcrumbs"></div>
+      <input id="search" placeholder="Filter current folder">
+
+      <label class="inlineCheck mediaOption" title="Loads a video-only preview. This is usually faster because Cutarr skips audio conversion.">
+        <input id="fastPreviewNoAudio" type="checkbox" checked>
+        Fast preview, no audio
+      </label>
+
+      <div id="fileList"></div>
+
+      <div class="storageFooter">
+        <div class="storageHeader">
+          <span class="small">Storage</span>
+          <span class="small" id="storageText">Loading...</span>
+        </div>
+        <div class="storageLine">
+          <span class="storageFill" id="storageFill"></span>
+        </div>
+      </div>
+
+    </aside>
+
+    <div class="leftFooter">
+      <span class="leftFooterVersion">Cutarr v0.51</span>
+      <span class="leftFooterCredit">Made with <span class="heart">❤</span> for your media</span>
+    </div>
+  </div>
+
+    <section class="editorPane">
+      <div class="playerCard panel">
+        <div class="mediaTitleRow">
+          <div>
+            <h2 id="selectedTitle">Select a video</h2>
+            <p class="small">Preview, step frames, then mark split points.</p>
+          </div>
+          <div class="metaBadges">
+            <span id="codecDisplay">Codec: --</span>
+            <span id="fpsDisplay">FPS: --</span>
+            <span id="resolutionDisplay">Resolution: --</span>
+            <span id="fileSizeDisplay">Size: --</span>
+            
+          </div>
+        </div>
+
+        <div class="videoShell">
+          <video id="video" controls preload="metadata"></video>
+        </div>
+
+        <div class="frameControls videoFrameControls">
+          <button id="frameBack" title="Step back one frame when paused">◀ Frame</button>
+          <button id="frameForward" title="Step forward one frame when paused">Frame ▶</button>
+          <span class="frameBadge" id="frameDisplay">Frame: --</span>
+        </div>
+      </div>
+
+      <div class="timelineCard panel">
+        <div class="timelineHeader">
+          <h2>Waveform</h2>
+          <div class="zoomGroup">
+            <span>Zoom</span>
+            <input id="zoom" type="range" min="0" max="100" value="0">
+            <span class="small" id="zoomDisplay">Fit</span>
+          </div>
+        </div>
+
+        <div id="waveform"></div>
+
+        <div class="timelineTools">
+          <button id="addSplit">⊕ Add split at playhead</button>
+
+          <div class="splitNavGroup" aria-label="Split point navigation">
+            <button id="prevSplitPoint" title="Go to previous split point">◀ Split</button>
+            <button id="deleteCurrentSplitPoint" class="splitTrashButton" title="Delete the currently selected split point" aria-label="Delete the currently selected split point">🗑</button>
+            <button id="nextSplitPoint" title="Go to next split point">Split ▶</button>
+          </div>
+
+          <button id="clearRegions">✕ Clear all splits</button>
+        </div>
+      </div>
+
+      <div class="regionsPanel panel">
+        <div class="sectionTitle">
+          <h2>Regions</h2>
+          <span class="small">Only checked regions will be output. Episode numbers update automatically.</span>
+        </div>
+        <div id="regionsList" class="regionsList"></div>
+      </div>
+    </section>
+
+    <aside class="rightPane">
+      <div class="panel detectPanel">
+        <h2>✣ Auto Detect</h2>
+        <label>Expected # of episodes in the file</label>
+        <input id="expectedEpisodes" type="number" value="2" min="1" max="20">
+        <p class="small detectHelp">Auto Detect looks near the expected episode boundaries, but only creates splits on real black-frame or silence points.</p>
+
+        <label class="inlineCheck"><input id="splitTitlesCredits" type="checkbox" checked> Split titles/credits</label>
+
+        <label class="tooltipLabel" title="Auto Detect searches near this time for a black frame or scene change to create the first Titles cut.">Intro titles split time <span class="small">(optional)</span></label>
+        <input id="introTitlesHint" type="text" placeholder="00:01:04 or 64">
+
+        <label class="tooltipLabel" title="Auto Detect searches near this time for a black frame or scene change to create the Credits cut.">Credits split time <span class="small">(optional)</span></label>
+        <input id="creditsSplitHint" type="text" placeholder="00:42:10 or 2530">
+
+        <div class="detectButtons">
+          <button id="detectCombined" class="primary">▶ Auto Detect</button>
+          <button id="detectSilence">Silence Detect</button>
+          <button id="detectBlack">Black Frames Detect</button>
+        </div>
+      </div>
+
+      <div class="panel namingPanel">
+        <h2>Naming</h2>
+
+        <label>Show Name</label>
+        <input id="showName" value="Show Name">
+
+        <div class="twoCol">
+          <div>
+            <label>Season</label>
+            <input id="season" type="number" value="1" min="1">
+          </div>
+          <div>
+            <label>Start Ep</label>
+            <input id="startEpisode" type="number" value="1" min="1">
+          </div>
+        </div>
+
+        <div class="previewNames">
+          <h3>Preview Names</h3>
+          <div id="previewNamesList" class="previewNamesList">
+            <p class="small">Output names are generated from checked regions.</p>
+          </div>
+        </div>
+
+        <div class="actions stacked">
+          <button id="splitNowButton" class="primary">✂ Split Checked Regions</button>
+          <button id="splitButton">＋ Queue Checked Regions</button>
+          <div class="twoCol">
+            <button id="runQueueButton">Run Queue</button>
+            <button id="clearQueueButton">Clear Queue</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel jobsPanel">
+        <h2>Queued Splits</h2>
+        <div id="pendingQueue" class="pendingQueue"></div>
+        <h2 class="jobsHeading">Jobs</h2>
+        <div id="jobs"></div>
+      </div>
+    </aside>
+  </main>
+  <div id="versionBadge">Cutarr v0.51</div>
+  <script src="/static/js/app.js?v=0.51"></script>
+</body>
+</html>

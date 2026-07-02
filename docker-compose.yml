@@ -1,0 +1,16 @@
+services:
+  cutarr:
+    build: .
+    container_name: cutarr
+    ports:
+      - "8088:8088"
+    environment:
+      CUTARR_MEDIA_DIR: /media
+      CUTARR_OUTPUT_DIR: /media/Cutarr_Output
+      CUTARR_CACHE_DIR: /cache
+      CUTARR_CONFIG_DIR: /config
+    volumes:
+      - ./media:/media
+      - ./cache:/cache
+      - ./config:/config
+    restart: unless-stopped

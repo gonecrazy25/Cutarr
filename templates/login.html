@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cutarr Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="/static/img/cutarr-icon.png">
+  <link href="/static/css/app.css?v=0.51" rel="stylesheet">
+</head>
+<body class="loginBody">
+  <main class="loginShell">
+    <section class="loginCard panel">
+      <div class="loginBrand">
+        <img src="/static/img/cutarr-icon.png" alt="Cutarr logo" class="loginLogo">
+        <div>
+          <h1>Cutarr</h1>
+          <p id="loginSubtitle">Checking login status...</p>
+        </div>
+      </div>
+
+      <form id="loginForm" class="loginForm">
+        <label>Username</label>
+        <input id="loginUsername" value="admin" disabled>
+
+        <label id="loginPasswordLabel">Password</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" autofocus>
+
+        <label id="confirmPasswordLabel" class="hidden">Confirm password</label>
+        <input id="confirmSetupPassword" class="hidden" type="password" autocomplete="new-password">
+
+        <button id="loginSubmit" class="primary" type="submit">Login</button>
+        <p id="loginMessage" class="small"></p>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/login.js?v=0.51"></script>
+</body>
+</html>
