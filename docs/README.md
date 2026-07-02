@@ -30,12 +30,8 @@ Cutarr runs in a browser, uses FFmpeg in the container, and can access media fil
 
 ## Screenshots
 
-```markdown
 ![Cutarr main screen](docs/screenshots/cutarr-main.png)
-```
-```markdown
 ![Cutarr regions screen](docs/screenshots/cutarr-regions.png)
-```
 
 ## How it works
 
