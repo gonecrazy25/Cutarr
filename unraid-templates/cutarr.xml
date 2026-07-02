@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>Cutarr</Name>
+  <Repository>ghcr.io/gonecrazy25/cutarr:latest</Repository>
+  <Registry>https://github.com/gonecrazy25/cutarr</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/gonecrazy25/cutarr/issues</Support>
+  <Project>https://github.com/gonecrazy25/cutarr</Project>
+  <Overview>
+    Cutarr is a web UI for splitting multi-episode TV recordings and DVD rips into separate episode files.
+  </Overview>
+  <Category>MediaApp:Video</Category>
+  <WebUI>http://[IP]:[PORT:8088]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/gonecrazy25/cutarr/main/templates/cutarr.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/gonecrazy25/cutarr/main/static/img/cutarr-icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Web UI Port" Target="8088" Default="8088" Mode="tcp" Description="Cutarr web interface port" Type="Port" Display="always" Required="true" Mask="false">8088</Config>
+  <Config Name="Media" Target="/media" Default="/mnt/user/media" Mode="rw" Description="Folder containing recordings and video files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/cutarr/config" Mode="rw" Description="Cutarr config, settings, login password, and app data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/cutarr/config</Config>
+  <Config Name="Cache" Target="/cache" Default="/mnt/user/appdata/cutarr/cache" Mode="rw" Description="Preview, waveform, and temporary cache files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/cutarr/cache</Config>
+</Container>
