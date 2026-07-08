@@ -14,7 +14,7 @@
   </Overview>
   <Category>MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:8088]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/gonecrazy25/cutarr/main/templates/cutarr.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/gonecrazy25/cutarr/main/unraid-templates/cutarr.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/gonecrazy25/cutarr/main/static/img/cutarr-icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>

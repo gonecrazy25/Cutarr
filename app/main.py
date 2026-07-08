@@ -83,6 +83,13 @@ class DetectionRequest(BaseModel):
     credits_split_hint_time: Optional[float] = None
 
 
+class PrepareMediaRequest(BaseModel):
+    path: str
+    audio: bool = True
+    prepare_preview: bool = True
+    prepare_waveform: bool = True
+
+
 class SettingsRequest(BaseModel):
     cache_cleanup_days: float = 1.0
     default_split_titles_credits: bool = True
@@ -243,6 +250,44 @@ def api_waveform(path: str):
     try:
         media = resolve_media_path(path)
         return generate_waveform(media)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@app.post("/api/prepare-media")
+def api_prepare_media(req: PrepareMediaRequest):
+    """
+    Pre-build cached preview and waveform files for Folder Mode.
+    This lets the browser page through loaded folder videos quickly after
+    the folder load finishes.
+    """
+    try:
+        media = resolve_media_path(req.path)
+        dims = ffprobe_dimensions(media)
+
+        preview_ready = False
+        waveform_ready = False
+
+        if req.prepare_preview:
+            ensure_preview(media, with_audio=req.audio)
+            preview_ready = True
+
+        if req.prepare_waveform:
+            generate_waveform(media)
+            waveform_ready = True
+
+        return {
+            "path": req.path,
+            "duration": ffprobe_duration(media),
+            "fps": ffprobe_fps(media),
+            "name": media.name,
+            "video_codec": ffprobe_video_codec(media),
+            "width": dims.get("width"),
+            "height": dims.get("height"),
+            "size_bytes": media.stat().st_size,
+            "preview_ready": preview_ready,
+            "waveform_ready": waveform_ready,
+            "preview_audio": req.audio,
+        }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

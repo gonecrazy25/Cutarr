@@ -5,7 +5,7 @@
   <title>Cutarr</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/static/img/cutarr-icon.png">
-  <link href="/static/css/app.css?v=0.51" rel="stylesheet">
+  <link href="/static/css/app.css?v=0.62" rel="stylesheet">
   <script src="https://unpkg.com/wavesurfer.js@7"></script>
   <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
 </head>
@@ -36,6 +36,7 @@
       <h2 id="busyTitle">Processing</h2>
       <p id="busyText">Working...</p>
       <div class="indeterminate"><div></div></div>
+      <div id="busyProgress" class="busyProgress hidden"><div id="busyProgressFill"></div></div>
       <p class="small" id="busyHint">Large recordings may take a while.</p>
       <button id="busyCancel" class="busyCancel hidden" type="button">Cancel</button>
     </div>
@@ -107,6 +108,12 @@
         Fast preview, no audio
       </label>
 
+      <div class="folderModeControls">
+        <button id="loadFolderModeButton" type="button" title="Load all supported videos from the current folder">📂 Load Folder Mode</button>
+        <button id="exitFolderModeButton" class="hidden" type="button">Single File Mode</button>
+        <p id="folderModeStatus" class="small"></p>
+      </div>
+
       <div id="fileList"></div>
 
       <div class="storageFooter">
@@ -122,13 +129,19 @@
     </aside>
 
     <div class="leftFooter">
-      <span class="leftFooterVersion">Cutarr v0.51</span>
+      <span class="leftFooterVersion">Cutarr v0.62</span>
       <span class="leftFooterCredit">Made with <span class="heart">❤</span> for your media</span>
     </div>
   </div>
 
     <section class="editorPane">
       <div class="playerCard panel">
+        <div id="folderNavigator" class="folderNavigator hidden">
+          <button id="prevFolderVideo" type="button" title="Previous video in loaded folder">◀</button>
+          <span id="folderVideoLabel">Folder Mode</span>
+          <button id="nextFolderVideo" type="button" title="Next video in loaded folder">▶</button>
+        </div>
+
         <div class="mediaTitleRow">
           <div>
             <h2 id="selectedTitle">Select a video</h2>
@@ -193,7 +206,7 @@
         <h2>✣ Auto Detect</h2>
         <label>Expected # of episodes in the file</label>
         <input id="expectedEpisodes" type="number" value="2" min="1" max="20">
-        <p class="small detectHelp">Auto Detect looks near the expected episode boundaries, but only creates splits on real black-frame or silence points.</p>
+        <p class="small detectHelp">Auto Detect looks near the expected episode boundaries, but only creates splits on real black-frame or silence points. In Folder Mode, these detect buttons process every loaded video.</p>
 
         <label class="inlineCheck"><input id="splitTitlesCredits" type="checkbox" checked> Split titles/credits</label>
 
@@ -237,6 +250,7 @@
         <div class="actions stacked">
           <button id="splitNowButton" class="primary">✂ Split Checked Regions</button>
           <button id="splitButton">＋ Queue Checked Regions</button>
+          <button id="queueAllFolderButton" class="hidden">＋ Queue All Video Checked Regions</button>
           <div class="twoCol">
             <button id="runQueueButton">Run Queue</button>
             <button id="clearQueueButton">Clear Queue</button>
@@ -252,7 +266,7 @@
       </div>
     </aside>
   </main>
-  <div id="versionBadge">Cutarr v0.51</div>
-  <script src="/static/js/app.js?v=0.51"></script>
+  <div id="versionBadge">Cutarr v0.62</div>
+  <script src="/static/js/app.js?v=0.62"></script>
 </body>
 </html>

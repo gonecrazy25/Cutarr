@@ -8,11 +8,15 @@ let includedRegionIds = new Map();
 let regionLabels = new Map();
 let currentFps = 29.97;
 let pendingQueue = [];
+let jobDisplayLabels = new Map();
 let splitStatusMode = null; // "single" or "queue"
 let splitTrackedJobIds = new Set();
 let splitCompletionShown = false;
 let activeOperationAbort = null;
 let mediaLoadToken = 0;
+let folderMode = false;
+let folderVideos = [];
+let folderIndex = 0;
 
 const fileList = document.getElementById("fileList");
 const search = document.getElementById("search");
@@ -20,6 +24,7 @@ const video = document.getElementById("video");
 const regionsList = document.getElementById("regionsList");
 const jobsDiv = document.getElementById("jobs");
 const pendingQueueDiv = document.getElementById("pendingQueue");
+const queueAllFolderButton = document.getElementById("queueAllFolderButton");
 const codecDisplay = document.getElementById("codecDisplay");
 const fpsDisplay = document.getElementById("fpsDisplay");
 const resolutionDisplay = document.getElementById("resolutionDisplay");
@@ -31,13 +36,23 @@ const storageText = document.getElementById("storageText");
 const storageFill = document.getElementById("storageFill");
 const previewNamesList = document.getElementById("previewNamesList");
 const statusPill = document.getElementById("statusPill");
+const detectFolderCombinedButton = document.getElementById("detectFolderCombined");
 const breadcrumbs = document.getElementById("breadcrumbs");
 const busyOverlay = document.getElementById("busyOverlay");
 const busyTitle = document.getElementById("busyTitle");
 const busyText = document.getElementById("busyText");
 const busyHint = document.getElementById("busyHint");
 const busyCancel = document.getElementById("busyCancel");
+const busyProgress = document.getElementById("busyProgress");
+const busyProgressFill = document.getElementById("busyProgressFill");
 const fastPreviewNoAudio = document.getElementById("fastPreviewNoAudio");
+const loadFolderModeButton = document.getElementById("loadFolderModeButton");
+const exitFolderModeButton = document.getElementById("exitFolderModeButton");
+const folderModeStatus = document.getElementById("folderModeStatus");
+const folderNavigator = document.getElementById("folderNavigator");
+const prevFolderVideoButton = document.getElementById("prevFolderVideo");
+const nextFolderVideoButton = document.getElementById("nextFolderVideo");
+const folderVideoLabel = document.getElementById("folderVideoLabel");
 const settingsMenuButton = document.getElementById("settingsMenuButton");
 const settingsOverlay = document.getElementById("settingsOverlay");
 const settingsCloseButton = document.getElementById("settingsCloseButton");
@@ -103,6 +118,7 @@ function showBusy(title, text, hint = "Large recordings may take a while.", onCa
   busyTitle.textContent = title;
   busyText.textContent = text;
   busyHint.textContent = hint;
+  setBusyProgress(null);
 
   if (busyCancel) {
     if (typeof onCancel === "function") {
@@ -117,8 +133,23 @@ function showBusy(title, text, hint = "Large recordings may take a while.", onCa
   busyOverlay.classList.remove("hidden");
 }
 
+function setBusyProgress(value) {
+  if (!busyProgress || !busyProgressFill) return;
+
+  if (value === null || value === undefined) {
+    busyProgress.classList.add("hidden");
+    busyProgressFill.style.width = "0%";
+    return;
+  }
+
+  const pct = Math.max(0, Math.min(100, Number(value) || 0));
+  busyProgress.classList.remove("hidden");
+  busyProgressFill.style.width = `${pct}%`;
+}
+
 function hideBusy() {
   busyOverlay.classList.add("hidden");
+  setBusyProgress(null);
   if (busyCancel) {
     busyCancel.classList.add("hidden");
     busyCancel.onclick = null;
@@ -164,31 +195,307 @@ function updateFrameCounter() {
   }
 }
 
+function cleanShowName(raw) {
+  return String(raw || "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseEpisodeInfo(path) {
   const file = path.split("/").pop().replace(/\.[^.]+$/, "");
-  let m = file.match(/^(.*?)[ ._\-]+S(\d{1,2})E(\d{1,3})/i);
+
+  // Supports names like:
+  // Show.Name.S01E03, Show Name - S01E03, Show_Name_S01_E03,
+  // and Show.Name.S01 E03.
+  let m = file.match(/^(.*?)[ ._\-]*[Ss](\d{1,2})[ ._\-]*[Ee](\d{1,3})(?:\D|$)/);
   if (m) {
     return {
-      show: m[1].replace(/[._]+/g, " ").replace(/\s+/g, " ").trim(),
+      show: cleanShowName(m[1]) || "Show Name",
       season: Number(m[2]),
       episode: Number(m[3])
     };
   }
 
-  m = file.match(/^(.*?)[ ._\-]+(\d{1,2})x(\d{1,3})/i);
+  m = file.match(/^(.*?)[ ._\-]+(\d{1,2})x(\d{1,3})(?:\D|$)/i);
   if (m) {
     return {
-      show: m[1].replace(/[._]+/g, " ").replace(/\s+/g, " ").trim(),
+      show: cleanShowName(m[1]) || "Show Name",
       season: Number(m[2]),
       episode: Number(m[3])
     };
   }
 
   return {
-    show: file.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim(),
+    show: cleanShowName(file) || "Show Name",
     season: 1,
     episode: 1
   };
+}
+
+
+function parseSeasonEpisodeSortInfo(name) {
+  const m = String(name || "").match(/[Ss](\d{1,2})[ ._-]*[Ee](\d{1,3})(?:\D|$)/);
+  if (!m) return null;
+
+  return {
+    season: Number(m[1]),
+    episode: Number(m[2])
+  };
+}
+
+function sortFolderVideos(files) {
+  return [...(files || [])].sort((a, b) => {
+    const aInfo = parseSeasonEpisodeSortInfo(a.name);
+    const bInfo = parseSeasonEpisodeSortInfo(b.name);
+
+    if (aInfo && bInfo) {
+      if (aInfo.season !== bInfo.season) return aInfo.season - bInfo.season;
+      if (aInfo.episode !== bInfo.episode) return aInfo.episode - bInfo.episode;
+      return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: "base"});
+    }
+
+    if (aInfo && !bInfo) return -1;
+    if (!aInfo && bInfo) return 1;
+
+    return a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: "base"});
+  });
+}
+
+function currentFolderVideo() {
+  if (!folderMode || !Array.isArray(folderVideos) || !folderVideos.length) return null;
+  return folderVideos[folderIndex] || null;
+}
+
+function syncCurrentFolderVideoState() {
+  if (!folderMode || !currentPath || !wsRegions) return;
+
+  const item = folderVideos.find(v => v.path === currentPath);
+  if (!item) return;
+
+  item.regions = getRegions(false).map(r => ({
+    start: r.start,
+    end: r.end,
+    label: r.label,
+    include: r.include !== false,
+  }));
+}
+
+function regionsForFolderItem(item) {
+  if (!item) return [];
+
+  if (folderMode && item.path === currentPath && wsRegions) {
+    return getRegions(false).map(r => ({
+      start: r.start,
+      end: r.end,
+      label: r.label,
+      include: r.include !== false,
+    }));
+  }
+
+  return Array.isArray(item.regions) ? item.regions : [];
+}
+
+function checkedRegionCountForFolderItem(item) {
+  return regionsForFolderItem(item).filter(r => r.include !== false).length;
+}
+
+function folderStartEpisodeForIndex(index) {
+  let episode = Number(document.getElementById("startEpisode").value) || 1;
+
+  for (let i = 0; i < index; i += 1) {
+    episode += checkedRegionCountForFolderItem(folderVideos[i]);
+  }
+
+  return episode;
+}
+
+function updateFolderModeUi(refreshFileList = false) {
+  const active = folderMode && Array.isArray(folderVideos) && folderVideos.length > 0;
+
+  if (document.body) document.body.classList.toggle("folderModeActive", active);
+  if (queueAllFolderButton) queueAllFolderButton.classList.toggle("hidden", !active);
+
+  if (typeof folderNavigator !== "undefined" && folderNavigator) folderNavigator.classList.toggle("hidden", !active);
+  if (typeof exitFolderModeButton !== "undefined" && exitFolderModeButton) exitFolderModeButton.classList.toggle("hidden", !folderMode);
+
+  if (typeof folderModeStatus !== "undefined" && folderModeStatus) {
+    if (active) {
+      folderModeStatus.textContent = `${folderVideos.length} video${folderVideos.length === 1 ? "" : "s"} loaded in Folder Mode.`;
+    } else {
+      folderModeStatus.textContent = "";
+    }
+  }
+
+  if (typeof folderVideoLabel !== "undefined" && folderVideoLabel) {
+    const item = currentFolderVideo();
+    folderVideoLabel.textContent = item
+      ? `Video ${folderIndex + 1} of ${folderVideos.length}: ${item.name}`
+      : "Folder Mode";
+  }
+
+  if (typeof prevFolderVideoButton !== "undefined" && prevFolderVideoButton) prevFolderVideoButton.disabled = !active || folderVideos.length <= 1;
+  if (typeof nextFolderVideoButton !== "undefined" && nextFolderVideoButton) nextFolderVideoButton.disabled = !active || folderVideos.length <= 1;
+
+  // Do not redraw the file browser during startup before /api/browse has
+  // populated currentListing. That caused the Media Library to stay blank.
+  if (refreshFileList && fileList && currentListing && Array.isArray(currentListing.files)) {
+    renderFiles();
+  }
+}
+
+async function loadFolderMode() {
+  const files = sortFolderVideos(currentListing.files || []);
+
+  if (!files.length) {
+    alert("This folder does not contain supported video files.");
+    return;
+  }
+
+  const loadAbort = new AbortController();
+  activeOperationAbort = loadAbort;
+  const previewHasAudio = !useFastPreviewNoAudio();
+
+  showBusy(
+    "Loading Folder Mode",
+    `Preparing preview and waveform cache for ${files.length} video${files.length === 1 ? "" : "s"}.`,
+    previewHasAudio
+      ? "Cutarr will build browser previews with audio and waveform data for every video in this folder."
+      : "Fast preview is enabled, so Cutarr will build video-only previews and waveform data for every video in this folder.",
+    () => {
+      loadAbort.abort();
+      statusPill.textContent = "Folder load canceled";
+      hideBusy();
+    }
+  );
+
+  folderMode = true;
+  folderVideos = files.map((file, index) => ({
+    path: file.path,
+    name: file.name,
+    index,
+    info: null,
+    regions: [],
+    detected: false,
+    prepared: false,
+    prepareError: null,
+  }));
+  folderIndex = 0;
+
+  let failedCount = 0;
+
+  try {
+    for (let i = 0; i < folderVideos.length; i += 1) {
+      if (loadAbort.signal.aborted) throw new DOMException("Operation canceled", "AbortError");
+
+      const item = folderVideos[i];
+      const pctStart = (i / folderVideos.length) * 100;
+
+      statusPill.textContent = `Preparing ${i + 1}/${folderVideos.length}`;
+      busyTitle.textContent = "Loading Folder Mode";
+      busyText.textContent = `Preparing preview/waveform ${i + 1} of ${folderVideos.length}: ${item.name}`;
+      busyHint.textContent = "This can take a while the first time. Future folder loads should reuse the cache.";
+      setBusyProgress(pctStart);
+
+      try {
+        const res = await fetch("/api/prepare-media", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          cache: "no-store",
+          signal: loadAbort.signal,
+          body: JSON.stringify({
+            path: item.path,
+            audio: previewHasAudio,
+            prepare_preview: true,
+            prepare_waveform: true
+          })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data.detail || "Prepare failed");
+        }
+
+        item.info = data;
+        item.prepared = true;
+        item.prepareError = null;
+      } catch (err) {
+        if (err && err.name === "AbortError") throw err;
+
+        failedCount += 1;
+        item.prepared = false;
+        item.prepareError = err.message || String(err);
+        console.warn("Folder preview/waveform prepare failed:", item.path, err);
+
+        // Fall back to metadata-only so the file can still be opened manually.
+        try {
+          const infoRes = await fetch("/api/info?path=" + encodeURIComponent(item.path), {
+            cache: "no-store",
+            signal: loadAbort.signal
+          });
+          if (infoRes.ok) item.info = await infoRes.json();
+        } catch (infoErr) {
+          if (infoErr && infoErr.name === "AbortError") throw infoErr;
+          console.warn("Folder metadata fallback failed:", item.path, infoErr);
+        }
+      }
+
+      setBusyProgress(((i + 1) / folderVideos.length) * 100);
+    }
+
+    const firstParsed = parseEpisodeInfo(folderVideos[0].path);
+    if (firstParsed.show) document.getElementById("showName").value = firstParsed.show;
+    if (firstParsed.season) document.getElementById("season").value = firstParsed.season;
+    if (firstParsed.episode) document.getElementById("startEpisode").value = firstParsed.episode;
+
+    hideBusy();
+    statusPill.textContent = failedCount
+      ? `Folder Mode loaded, ${failedCount} prepare failed`
+      : "Folder Mode ready";
+    updateFolderModeUi(true);
+    loadFolderVideo(0);
+
+    if (failedCount) {
+      alert(`${failedCount} video${failedCount === 1 ? "" : "s"} could not be pre-prepared. They may still open, but may take longer when selected.`);
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+
+    console.error("Folder Mode load failed:", err);
+    statusPill.textContent = "Folder load failed";
+    hideBusy();
+    alert("Folder Mode load failed. Check container logs.");
+  }
+}
+
+function exitFolderMode(showStatus = true) {
+  syncCurrentFolderVideoState();
+  folderMode = false;
+  folderVideos = [];
+  folderIndex = 0;
+  updateFolderModeUi(true);
+  renderPreviewNames();
+  if (showStatus) statusPill.textContent = "Single File Mode";
+}
+
+function loadFolderVideo(index) {
+  if (!folderMode || !Array.isArray(folderVideos) || !folderVideos.length) return;
+
+  syncCurrentFolderVideoState();
+
+  if (index < 0) index = folderVideos.length - 1;
+  if (index >= folderVideos.length) index = 0;
+
+  folderIndex = index;
+  const item = folderVideos[folderIndex];
+
+  updateFolderModeUi(true);
+  selectFile(item.path, {
+    fromFolder: true,
+    preserveNaming: true,
+    restoreRegions: item.regions || [],
+  });
 }
 
 async function browse(dir = "") {
@@ -252,7 +559,10 @@ function renderFiles() {
 
   const addRow = (kind, icon, label, path) => {
     const row = document.createElement("div");
-    row.className = "fileItem fileItemClickable" + (kind === "file" && path === currentPath ? " active" : "");
+    const isLoadedFolderFile = kind === "file" && folderMode && Array.isArray(folderVideos) && folderVideos.some(v => v.path === path);
+    row.className = "fileItem fileItemClickable"
+      + (kind === "file" && path === currentPath ? " active" : "")
+      + (isLoadedFolderFile ? " folderLoaded" : "");
 
     const nameWrap = document.createElement("div");
     nameWrap.className = "fileNameWrap";
@@ -350,7 +660,13 @@ function attachFastPreviewSettingHandler() {
   });
 }
 
-function selectFile(path) {
+function selectFile(path, options = {}) {
+  const fromFolder = options.fromFolder === true;
+
+  if (!fromFolder && folderMode) {
+    exitFolderMode(false);
+  }
+
   currentPath = path;
   includedRegionIds = new Map();
   regionLabels = new Map();
@@ -358,9 +674,12 @@ function selectFile(path) {
 
   const parsed = parseEpisodeInfo(path);
   if (selectedTitle) selectedTitle.textContent = path.split("/").pop();
-  document.getElementById("showName").value = parsed.show || "Show Name";
-  document.getElementById("season").value = parsed.season || 1;
-  document.getElementById("startEpisode").value = parsed.episode || 1;
+
+  if (!fromFolder && !options.preserveNaming) {
+    document.getElementById("showName").value = parsed.show || "Show Name";
+    document.getElementById("season").value = parsed.season || 1;
+    document.getElementById("startEpisode").value = parsed.episode || 1;
+  }
 
   fetch("/api/info?path=" + encodeURIComponent(path))
     .then(r => r.json())
@@ -440,7 +759,16 @@ function selectFile(path) {
     try {
       await initWaveform(path, waveformAbort.signal, previewUrl);
       if (token !== mediaLoadToken) return;
-      statusPill.textContent = "Media Loaded";
+
+      if (Array.isArray(options.restoreRegions) && options.restoreRegions.length) {
+        rebuildRegionsFromRegionSpecs(options.restoreRegions);
+      } else {
+        renderRegions();
+      }
+
+      if (fromFolder) updateFolderModeUi(false);
+
+      statusPill.textContent = folderMode ? "Folder Video Loaded" : "Media Loaded";
       tightenContentCards();
     } catch (err) {
       if (err && err.name === "AbortError") {
@@ -644,6 +972,11 @@ function outputFilename(show, season, episode, label) {
 function renderPreviewNames() {
   if (!previewNamesList) return;
 
+  if (folderMode) {
+    renderFolderPreviewNames();
+    return;
+  }
+
   // Use all regions here so the color index matches the Regions list exactly.
   // Only checked regions get an output name and episode number.
   const allRegions = getRegions(false);
@@ -672,6 +1005,45 @@ function renderPreviewNames() {
     previewNamesList.appendChild(row);
     episode += 1;
   });
+}
+
+function renderFolderPreviewNames() {
+  if (!previewNamesList) return;
+
+  syncCurrentFolderVideoState();
+
+  const show = document.getElementById("showName").value;
+  const season = Number(document.getElementById("season").value) || 1;
+  let episode = Number(document.getElementById("startEpisode").value) || 1;
+  let rendered = 0;
+
+  previewNamesList.innerHTML = "";
+
+  folderVideos.forEach((item) => {
+    const regions = regionsForFolderItem(item);
+
+    regions.forEach((r, visualIndex) => {
+      if (r.include === false) return;
+
+      const color = splitColor(visualIndex);
+      const row = document.createElement("div");
+      row.className = "previewNameRow";
+      row.innerHTML = `
+        <span class="previewDot" style="background:${color}"></span>
+        <span>
+          ${escapeHtml(outputFilename(show, season, episode, r.label))}
+          <span class="folderPreviewFile">${escapeHtml(item.name)}</span>
+        </span>
+      `;
+      previewNamesList.appendChild(row);
+      episode += 1;
+      rendered += 1;
+    });
+  });
+
+  if (!rendered) {
+    previewNamesList.innerHTML = `<p class="small">No checked folder regions yet. Run Detect Loaded Folder or detect the current video.</p>`;
+  }
 }
 
 
@@ -745,6 +1117,7 @@ function renderRegions() {
     regionsList.appendChild(empty);
   }
 
+  syncCurrentFolderVideoState();
   renderPreviewNames();
   alignRegionsPanelToJobs();
 }
@@ -879,43 +1252,101 @@ function addSplitAtPlayhead() {
     splitTime > r.start + tolerance && splitTime < r.end - tolerance
   );
 
-  if (targetIndex === -1) {
-    statusPill.textContent = "Split not added";
-    alert("Move the playhead inside an existing region before adding a split.");
+  const rebuilt = [];
+
+  if (targetIndex !== -1) {
+    existingRegions.forEach((region, index) => {
+      if (index !== targetIndex) {
+        rebuilt.push({
+          start: region.start,
+          end: region.end,
+          label: region.label,
+          include: region.include,
+        });
+        return;
+      }
+
+      rebuilt.push({
+        start: region.start,
+        end: splitTime,
+        label: region.label,
+        include: region.include,
+      });
+
+      rebuilt.push({
+        start: splitTime,
+        end: region.end,
+        label: region.label,
+        include: region.include,
+      });
+    });
+
+    rebuildRegionsFromRegionSpecs(rebuilt);
     return;
   }
 
-  const rebuilt = [];
+  // If Auto Detect left a gap with no region at the playhead, allow the user to
+  // add a split there. This fills/extends the open span to the next split point
+  // or to the beginning/end of the file instead of throwing an error.
+  const previousIndex = existingRegions.findLastIndex
+    ? existingRegions.findLastIndex(r => r.end < splitTime - tolerance)
+    : (() => {
+        for (let i = existingRegions.length - 1; i >= 0; i -= 1) {
+          if (existingRegions[i].end < splitTime - tolerance) return i;
+        }
+        return -1;
+      })();
+
+  const nextIndex = existingRegions.findIndex(r => r.start > splitTime + tolerance);
+  const previous = previousIndex >= 0 ? existingRegions[previousIndex] : null;
+  const next = nextIndex >= 0 ? existingRegions[nextIndex] : null;
+  const gapStart = previous ? previous.end : 0;
+  const gapEnd = next ? next.start : duration;
+
+  if (splitTime <= gapStart + tolerance || splitTime >= gapEnd - tolerance) {
+    statusPill.textContent = "Split not added";
+    alert("Move the playhead farther from the nearest existing split point before adding a split.");
+    return;
+  }
 
   existingRegions.forEach((region, index) => {
-    if (index !== targetIndex) {
+    if (previous && index === previousIndex && (region.label || "Episode") === "Episode") {
+      // For a normal episode region, extend it up to the new split point.
       rebuilt.push({
         start: region.start,
-        end: region.end,
-        label: region.label,
+        end: splitTime,
+        label: "Episode",
         include: region.include,
       });
       return;
     }
 
-    // Split only the selected/containing region. This fixes the 00:00:00-start bug
-    // where an extra tiny region could be created before the requested split point.
     rebuilt.push({
       start: region.start,
-      end: splitTime,
-      label: region.label,
-      include: region.include,
-    });
-
-    rebuilt.push({
-      start: splitTime,
       end: region.end,
       label: region.label,
       include: region.include,
     });
   });
 
+  if (!previous || (previous.label || "Episode") !== "Episode") {
+    rebuilt.push({
+      start: gapStart,
+      end: splitTime,
+      label: "Episode",
+      include: true,
+    });
+  }
+
+  rebuilt.push({
+    start: splitTime,
+    end: gapEnd,
+    label: "Episode",
+    include: true,
+  });
+
   rebuildRegionsFromRegionSpecs(rebuilt);
+  statusPill.textContent = "Split added";
 }
 
 function splitBoundaryPoints() {
@@ -1126,6 +1557,10 @@ function deleteCurrentSplitPoint() {
 
 
 async function detect(mode) {
+  if (folderMode && Array.isArray(folderVideos) && folderVideos.length) {
+    return detectLoadedFolder(mode);
+  }
+
   if (!currentPath) return alert("Select a file first.");
 
   const label = mode === "combined" ? "Auto Detect" : mode === "black" ? "Black Frames Detect" : "Silence Detect";
@@ -1185,7 +1620,8 @@ async function detect(mode) {
     });
 
     renderRegions();
-    statusPill.textContent = `Detected ${regions.length} regions`;
+    syncCurrentFolderVideoState();
+    statusPill.textContent = folderMode ? `Detected ${regions.length} regions for current folder video` : `Detected ${regions.length} regions`;
     if (data.message) console.log("Cutarr Auto Detect:", data.message);
     if (mode === "combined" && regions.length === 0 && data.message) {
       alert(data.message);
@@ -1204,11 +1640,113 @@ async function detect(mode) {
   }
 }
 
+
+async function detectLoadedFolder(mode = "combined") {
+  if (!folderMode || !Array.isArray(folderVideos) || !folderVideos.length) {
+    alert("Load a folder first with Folder Mode.");
+    return;
+  }
+
+  syncCurrentFolderVideoState();
+
+  const detectAbort = new AbortController();
+  activeOperationAbort = detectAbort;
+
+  const label = mode === "combined" ? "Auto Detect" : mode === "black" ? "Black Frames Detect" : "Silence Detect";
+
+  const cancelDetect = () => {
+    detectAbort.abort();
+    statusPill.textContent = "Folder detect canceled";
+    hideBusy();
+  };
+
+  showBusy(
+    `${label} Folder`,
+    `Starting ${label.toLowerCase()} for ${folderVideos.length} loaded video${folderVideos.length === 1 ? "" : "s"}.`,
+    mode === "combined"
+      ? "Intro titles split time and Credits split time are applied to every loaded video if entered."
+      : "Cutarr detects each loaded folder video in order. Existing regions for each video are replaced by the new detection results.",
+    cancelDetect
+  );
+
+  const introHintInput = document.getElementById("introTitlesHint");
+  const introHintSeconds = introHintInput ? parseOptionalTimeSeconds(introHintInput.value) : null;
+  const creditsHintInput = document.getElementById("creditsSplitHint");
+  const creditsHintSeconds = creditsHintInput ? parseOptionalTimeSeconds(creditsHintInput.value) : null;
+  let totalRegions = 0;
+
+  try {
+    for (let i = 0; i < folderVideos.length; i += 1) {
+      if (detectAbort.signal.aborted) throw new DOMException("Operation canceled", "AbortError");
+
+      const item = folderVideos[i];
+      statusPill.textContent = `${label} ${i + 1}/${folderVideos.length}`;
+      busyText.textContent = `${label} ${i + 1} of ${folderVideos.length}: ${item.name}`;
+      setBusyProgress((i / folderVideos.length) * 100);
+
+      const res = await fetch("/api/detect", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        signal: detectAbort.signal,
+        body: JSON.stringify({
+          path: item.path,
+          mode,
+          expected_episodes: Number(document.getElementById("expectedEpisodes").value || 2),
+          split_titles_credits: document.getElementById("splitTitlesCredits").checked,
+          intro_titles_hint_time: introHintSeconds,
+          credits_split_hint_time: creditsHintSeconds
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || `Detection failed for ${item.name}`);
+      }
+
+      const regions = (data.regions || []).map(r => ({
+        start: r.start,
+        end: r.end,
+        label: r.label || "Episode",
+        include: true,
+      }));
+
+      item.regions = regions;
+      item.detected = true;
+      totalRegions += regions.length;
+
+      if (item.path === currentPath) {
+        rebuildRegionsFromRegionSpecs(regions);
+      }
+
+      setBusyProgress(((i + 1) / folderVideos.length) * 100);
+    }
+
+    syncCurrentFolderVideoState();
+    renderPreviewNames();
+    updateFolderModeUi();
+    statusPill.textContent = `${label} folder: ${totalRegions} regions`;
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      statusPill.textContent = "Folder detect canceled";
+      return;
+    }
+
+    console.error("Folder detection failed:", err);
+    statusPill.textContent = "Folder detect failed";
+    alert(err.message || "Folder detection failed. Check container logs.");
+  } finally {
+    hideBusy();
+  }
+}
+
 function buildSplitPayload() {
   if (!currentPath) {
     alert("Select a file first.");
     return null;
   }
+
+  syncCurrentFolderVideoState();
 
   const checked = getRegions(true);
   if (!checked.length) {
@@ -1218,16 +1756,80 @@ function buildSplitPayload() {
 
   const show = document.getElementById("showName").value;
   const season = Number(document.getElementById("season").value);
-  const startEpisode = Number(document.getElementById("startEpisode").value);
+  const startEpisode = folderMode ? folderStartEpisodeForIndex(folderIndex) : Number(document.getElementById("startEpisode").value);
 
   return {
     path: currentPath,
     displayName: currentPath.split("/").pop(),
+    folderMode,
+    folderIndex,
     regions: checked.map(r => ({start: r.start, end: r.end, label: r.label})),
     show,
     season,
     start_episode: startEpisode
   };
+}
+
+function payloadEpisodeLabel(payload) {
+  const season = String(Number(payload.season) || 1).padStart(2, "0");
+  const start = Number(payload.start_episode) || 1;
+  const count = Array.isArray(payload.regions) ? payload.regions.length : 0;
+
+  if (count <= 1) {
+    return `S${season}E${String(start).padStart(2, "0")}`;
+  }
+
+  const end = start + count - 1;
+  return `S${season}E${String(start).padStart(2, "0")}-E${String(end).padStart(2, "0")}`;
+}
+
+function buildFolderPayloadForItem(item, index) {
+  if (!item) return null;
+
+  syncCurrentFolderVideoState();
+
+  const regions = regionsForFolderItem(item).filter(r => r.include !== false);
+  if (!regions.length) return null;
+
+  const show = document.getElementById("showName").value;
+  const season = Number(document.getElementById("season").value) || 1;
+  const startEpisode = folderStartEpisodeForIndex(index);
+
+  return {
+    path: item.path,
+    displayName: item.name || item.path.split("/").pop(),
+    folderMode: true,
+    folderIndex: index,
+    regions: regions.map(r => ({start: r.start, end: r.end, label: r.label || "Episode"})),
+    show,
+    season,
+    start_episode: startEpisode
+  };
+}
+
+function queueAllFolderSplits() {
+  if (!folderMode || !Array.isArray(folderVideos) || !folderVideos.length) {
+    alert("Load a folder first with Folder Mode.");
+    return;
+  }
+
+  syncCurrentFolderVideoState();
+
+  const payloads = [];
+  folderVideos.forEach((item, index) => {
+    const payload = buildFolderPayloadForItem(item, index);
+    if (payload) payloads.push(payload);
+  });
+
+  if (!payloads.length) {
+    alert("No checked regions were found in the loaded folder videos.");
+    return;
+  }
+
+  pendingQueue.push(...payloads);
+  renderPendingQueue();
+  renderPreviewNames();
+  statusPill.textContent = `Queued ${payloads.length} folder video split job${payloads.length === 1 ? "" : "s"}`;
 }
 
 function queueCurrentSplit() {
@@ -1236,6 +1838,7 @@ function queueCurrentSplit() {
 
   pendingQueue.push(payload);
   renderPendingQueue();
+  renderPreviewNames();
   statusPill.textContent = `Queued ${pendingQueue.length} split job${pendingQueue.length === 1 ? "" : "s"}`;
 }
 
@@ -1271,7 +1874,7 @@ function renderPendingQueue() {
       <div class="queueTop">
         <div>
           <b>${escapeHtml(item.displayName)}</b>
-          <div class="small">${escapeHtml(item.show)} S${String(item.season).padStart(2, "0")} starting E${String(item.start_episode).padStart(2, "0")} · ${item.regions.length} region${item.regions.length === 1 ? "" : "s"}</div>
+          <div class="small">${escapeHtml(item.show)} ${payloadEpisodeLabel(item)} · ${item.regions.length} region${item.regions.length === 1 ? "" : "s"} · ${escapeHtml(item.displayName)}</div>
         </div>
         <button class="queueTrash" data-remove="${index}" title="Remove queued split" aria-label="Remove queued split">🗑</button>
       </div>
@@ -1286,7 +1889,7 @@ function renderPendingQueue() {
   alignRegionsPanelToJobs();
 }
 
-async function startSplitJob(payload) {
+async function startSplitJob(payload, displayLabel = null) {
   const res = await fetch("/api/split", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
@@ -1306,6 +1909,8 @@ async function startSplitJob(payload) {
   }
 
   activeJobs.add(data.job_id);
+  const label = displayLabel || `${payloadEpisodeLabel(payload)} · ${payload.displayName}`;
+  jobDisplayLabels.set(data.job_id, label);
   renderJob(data.job_id, {
     status: "queued",
     progress: 0,
@@ -1315,6 +1920,25 @@ async function startSplitJob(payload) {
   return data.job_id;
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForJobCompletion(jobId) {
+  while (true) {
+    const res = await fetch("/api/jobs/" + jobId, {cache: "no-store"});
+    const job = await res.json();
+    renderJob(jobId, job);
+
+    if (["finished", "failed", "unknown"].includes(job.status)) {
+      activeJobs.delete(jobId);
+      return job;
+    }
+
+    await sleep(1000);
+  }
+}
+
 async function runQueue() {
   if (!pendingQueue.length) return alert("There are no queued splits.");
 
@@ -1322,20 +1946,40 @@ async function runQueue() {
   pendingQueue = [];
   renderPendingQueue();
 
-  splitStatusMode = "queue";
+  splitStatusMode = null;
   splitTrackedJobIds = new Set();
   splitCompletionShown = false;
   statusPill.textContent = "Starting Split Job Queue";
 
-  // Submit quickly; backend starts each job in its own worker thread.
-  for (const payload of toRun) {
-    const jobId = await startSplitJob(payload);
-    if (jobId) splitTrackedJobIds.add(jobId);
+  let finishedCount = 0;
+  let failedCount = 0;
+
+  for (let i = 0; i < toRun.length; i += 1) {
+    const payload = toRun[i];
+    const episodeLabel = payloadEpisodeLabel(payload);
+    const displayLabel = `Job ${i + 1} of ${toRun.length} · ${episodeLabel} · ${payload.displayName}`;
+
+    statusPill.textContent = `Splitting job ${i + 1} of ${toRun.length}: ${episodeLabel}`;
+
+    const jobId = await startSplitJob(payload, displayLabel);
+    if (!jobId) {
+      failedCount += 1;
+      continue;
+    }
+
+    const job = await waitForJobCompletion(jobId);
+
+    if (job.status === "finished") {
+      finishedCount += 1;
+    } else {
+      failedCount += 1;
+    }
   }
 
-  if (splitTrackedJobIds.size) {
-    statusPill.textContent = "Split Job Queue Running";
-  }
+  splitCompletionShown = true;
+  statusPill.textContent = failedCount
+    ? `Split Job Queue Finished With Errors (${finishedCount}/${toRun.length} completed)`
+    : "Split Job Queue Finished";
 }
 
 function clearQueue() {
@@ -1354,7 +1998,7 @@ function renderJob(id, job) {
   }
   row.innerHTML = `
     <b>${job.status || "unknown"}</b>
-    <div class="small">${escapeHtml(job.message || "")}</div>
+    <div class="small">${jobDisplayLabels.has(id) ? `<b>${escapeHtml(jobDisplayLabels.get(id))}</b><br>` : ""}${escapeHtml(job.message || "")}</div>
     <div class="progressOuter"><div class="progressInner" style="width:${job.progress || 0}%">${job.progress || 0}%</div></div>
     ${job.outputs && job.outputs.length ? `<div class="small">Outputs: ${job.outputs.length}</div>` : ""}
     ${job.error ? `<div class="small">Error: ${escapeHtml(job.error)}</div>` : ""}
@@ -1385,6 +2029,7 @@ async function pollJobs() {
 
     if (["finished", "failed", "unknown"].includes(job.status)) {
       activeJobs.delete(id);
+      // Keep the label visible in the completed job row.
     }
   }
 
@@ -1742,6 +2387,7 @@ document.getElementById("detectBlack").onclick = () => detect("black");
 document.getElementById("clearRegions").onclick = () => { if (wsRegions) wsRegions.clearRegions(); includedRegionIds = new Map(); regionLabels = new Map(); renderRegions(); };
 document.getElementById("splitNowButton").onclick = splitNow;
 document.getElementById("splitButton").onclick = queueCurrentSplit;
+if (queueAllFolderButton) queueAllFolderButton.onclick = queueAllFolderSplits;
 document.getElementById("runQueueButton").onclick = runQueue;
 document.getElementById("clearQueueButton").onclick = clearQueue;
 document.getElementById("frameBack").onclick = () => stepFrame(-1);
@@ -1756,6 +2402,16 @@ search.oninput = renderFiles;
 
 restoreFastPreviewSetting();
 attachFastPreviewSettingHandler();
+
+if (typeof loadFolderModeButton !== "undefined" && loadFolderModeButton) loadFolderModeButton.onclick = loadFolderMode;
+if (typeof exitFolderModeButton !== "undefined" && exitFolderModeButton) exitFolderModeButton.onclick = () => exitFolderMode(true);
+if (typeof prevFolderVideoButton !== "undefined" && prevFolderVideoButton) prevFolderVideoButton.onclick = () => loadFolderVideo(folderIndex - 1);
+if (typeof nextFolderVideoButton !== "undefined" && nextFolderVideoButton) nextFolderVideoButton.onclick = () => loadFolderVideo(folderIndex + 1);
+try {
+  updateFolderModeUi(false);
+} catch (err) {
+  console.warn("Folder Mode UI init failed:", err);
+}
 
 
 if (settingsMenuButton) {
@@ -1789,14 +2445,21 @@ if (changePasswordButton) changePasswordButton.onclick = changeAdminPassword;
 if (logoutButton) logoutButton.onclick = logout;
 if (topLogoutButton) topLogoutButton.onclick = logout;
 
+window.addEventListener("error", (event) => {
+  console.error("Cutarr interface error:", event.error || event.message);
+  if (statusPill) statusPill.textContent = "Interface error";
+});
+
 setInterval(pollJobs, 1000);
-updateFrameCounter();
-if (zoomDisplay) zoomDisplay.textContent = "Fit";
-renderPreviewNames();
-renderPendingQueue();
-updateStorage();
-cleanupCacheOnPageLoad();
-loadSettings();
-alignLayoutPanels();
-window.addEventListener("resize", alignLayoutPanels);
+try { updateFrameCounter(); } catch (err) { console.error("Frame counter startup failed:", err); }
+try { if (zoomDisplay) zoomDisplay.textContent = "Fit"; } catch (err) { console.error("Zoom startup failed:", err); }
+try { renderPreviewNames(); } catch (err) { console.error("Preview names startup failed:", err); }
+try { renderPendingQueue(); } catch (err) { console.error("Pending queue startup failed:", err); }
+updateStorage().catch(err => console.error("Storage update failed:", err));
+cleanupCacheOnPageLoad().catch(err => console.error("Startup cache cleanup failed:", err));
+loadSettings().catch(err => console.error("Settings load failed:", err));
+try { alignLayoutPanels(); } catch (err) { console.error("Layout startup failed:", err); }
+window.addEventListener("resize", () => {
+  try { alignLayoutPanels(); } catch (err) { console.error("Layout resize failed:", err); }
+});
 browse("").catch(err => console.error("Initial browse failed:", err));
