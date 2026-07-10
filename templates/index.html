@@ -5,7 +5,7 @@
   <title>Cutarr</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/static/img/cutarr-icon.png">
-  <link href="/static/css/app.css?v=0.62" rel="stylesheet">
+  <link href="/static/css/app.css?v=0.65" rel="stylesheet">
   <script src="https://unpkg.com/wavesurfer.js@7"></script>
   <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
 </head>
@@ -129,7 +129,7 @@
     </aside>
 
     <div class="leftFooter">
-      <span class="leftFooterVersion">Cutarr v0.62</span>
+      <span class="leftFooterVersion">Cutarr v0.65</span>
       <span class="leftFooterCredit">Made with <span class="heart">❤</span> for your media</span>
     </div>
   </div>
@@ -206,7 +206,10 @@
         <h2>✣ Auto Detect</h2>
         <label>Expected # of episodes in the file</label>
         <input id="expectedEpisodes" type="number" value="2" min="1" max="20">
-        <p class="small detectHelp">Auto Detect looks near the expected episode boundaries, but only creates splits on real black-frame or silence points. In Folder Mode, these detect buttons process every loaded video.</p>
+        <p class="small detectHelp">
+          Auto Detect looks near the expected episode boundaries, but only creates splits on real black-frame or silence points.
+          <span id="folderModeDetectHelp" class="folderModeOnly hidden">In Folder Mode, these detect buttons process every loaded video.</span>
+        </p>
 
         <label class="inlineCheck"><input id="splitTitlesCredits" type="checkbox" checked> Split titles/credits</label>
 
@@ -240,6 +243,9 @@
           </div>
         </div>
 
+        <label>Filename Suffix <span class="small">(optional)</span></label>
+        <input id="filenameSuffix" type="text" placeholder="suffix">
+
         <div class="previewNames">
           <h3>Preview Names</h3>
           <div id="previewNamesList" class="previewNamesList">
@@ -259,14 +265,22 @@
       </div>
 
       <div class="panel jobsPanel">
-        <h2>Queued Splits</h2>
-        <div id="pendingQueue" class="pendingQueue"></div>
-        <h2 class="jobsHeading">Jobs</h2>
-        <div id="jobs"></div>
+        <div class="queueTabs" role="tablist" aria-label="Queued Splits and Jobs">
+          <button id="queuedSplitsTabButton" class="queueTabButton active" type="button" role="tab" aria-selected="true" aria-controls="queuedSplitsTabPanel">Queued Splits</button>
+          <button id="jobsTabButton" class="queueTabButton" type="button" role="tab" aria-selected="false" aria-controls="jobsTabPanel">Jobs</button>
+        </div>
+
+        <div id="queuedSplitsTabPanel" class="queueTabPanel active" role="tabpanel" aria-labelledby="queuedSplitsTabButton">
+          <div id="pendingQueue" class="pendingQueue"></div>
+        </div>
+
+        <div id="jobsTabPanel" class="queueTabPanel hidden" role="tabpanel" aria-labelledby="jobsTabButton">
+          <div id="jobs"></div>
+        </div>
       </div>
     </aside>
   </main>
-  <div id="versionBadge">Cutarr v0.62</div>
-  <script src="/static/js/app.js?v=0.62"></script>
+  <div id="versionBadge">Cutarr v0.65</div>
+  <script src="/static/js/app.js?v=0.65"></script>
 </body>
 </html>

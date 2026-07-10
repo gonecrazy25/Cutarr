@@ -13,16 +13,27 @@ def sanitize_name(value: str) -> str:
     cleaned = "".join(c if c.isalnum() or c in " ._-" else "_" for c in value).strip()
     return cleaned or "Show"
 
-def make_output_path(show: str, season: int, episode: int, ext=".mkv") -> Path:
+def make_output_path(show: str, season: int, episode: int, ext=".mkv", suffix: str = "", label: str = "Episode") -> Path:
     show_clean = sanitize_name(show)
+    suffix_clean = sanitize_name(suffix) if suffix else ""
+    label_clean = sanitize_name(label) if label and label != "Episode" else ""
+
     folder = OUTPUT_DIR / show_clean / f"Season {season:02d}"
     folder.mkdir(parents=True, exist_ok=True)
-    filename = f"{show_clean} - S{season:02d}E{episode:02d}{ext}"
+
+    extras = []
+    if suffix_clean:
+        extras.append(suffix_clean)
+    if label_clean:
+        extras.append(label_clean)
+
+    extra_text = f" - {' - '.join(extras)}" if extras else ""
+    filename = f"{show_clean} - S{season:02d}E{episode:02d}{extra_text}{ext}"
     candidate = folder / filename
     counter = 2
 
     while candidate.exists():
-        candidate = folder / f"{show_clean} - S{season:02d}E{episode:02d} ({counter}){ext}"
+        candidate = folder / f"{show_clean} - S{season:02d}E{episode:02d}{extra_text} ({counter}){ext}"
         counter += 1
 
     return candidate
@@ -31,7 +42,7 @@ def get_job(job_id):
     with lock:
         return jobs.get(job_id, {"status": "unknown"})
 
-def create_split_job(input_path: Path, regions, show: str, season: int, start_episode: int):
+def create_split_job(input_path: Path, regions, show: str, season: int, start_episode: int, suffix: str = ""):
     job_id = str(uuid.uuid4())
 
     with lock:
@@ -47,7 +58,7 @@ def create_split_job(input_path: Path, regions, show: str, season: int, start_ep
 
     thread = threading.Thread(
         target=_run_split_job,
-        args=(job_id, input_path, regions, show, season, start_episode),
+        args=(job_id, input_path, regions, show, season, start_episode, suffix),
         daemon=True,
     )
     thread.start()
@@ -58,7 +69,7 @@ def _set(job_id, **kwargs):
         if job_id in jobs:
             jobs[job_id].update(kwargs)
 
-def _run_split_job(job_id, input_path: Path, regions, show: str, season: int, start_episode: int):
+def _run_split_job(job_id, input_path: Path, regions, show: str, season: int, start_episode: int, suffix: str = ""):
     try:
         total_duration = sum(max(0, float(r["end"]) - float(r["start"])) for r in regions)
         completed_duration = 0.0
@@ -74,7 +85,7 @@ def _run_split_job(job_id, input_path: Path, regions, show: str, season: int, st
                 continue
 
             ep = start_episode + idx
-            output = make_output_path(show, int(season), ep, ".mkv")
+            output = make_output_path(show, int(season), ep, ".mkv", suffix=suffix, label=region.get("label", "Episode"))
             duration = end - start
 
             cmd = [

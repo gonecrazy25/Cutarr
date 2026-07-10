@@ -25,11 +25,16 @@ const regionsList = document.getElementById("regionsList");
 const jobsDiv = document.getElementById("jobs");
 const pendingQueueDiv = document.getElementById("pendingQueue");
 const queueAllFolderButton = document.getElementById("queueAllFolderButton");
+const queuedSplitsTabButton = document.getElementById("queuedSplitsTabButton");
+const jobsTabButton = document.getElementById("jobsTabButton");
+const queuedSplitsTabPanel = document.getElementById("queuedSplitsTabPanel");
+const jobsTabPanel = document.getElementById("jobsTabPanel");
 const codecDisplay = document.getElementById("codecDisplay");
 const fpsDisplay = document.getElementById("fpsDisplay");
 const resolutionDisplay = document.getElementById("resolutionDisplay");
 const fileSizeDisplay = document.getElementById("fileSizeDisplay");
 const selectedTitle = document.getElementById("selectedTitle");
+const filenameSuffixInput = document.getElementById("filenameSuffix");
 const frameDisplay = document.getElementById("frameDisplay");
 const zoomDisplay = document.getElementById("zoomDisplay");
 const storageText = document.getElementById("storageText");
@@ -53,6 +58,7 @@ const folderNavigator = document.getElementById("folderNavigator");
 const prevFolderVideoButton = document.getElementById("prevFolderVideo");
 const nextFolderVideoButton = document.getElementById("nextFolderVideo");
 const folderVideoLabel = document.getElementById("folderVideoLabel");
+const folderModeDetectHelp = document.getElementById("folderModeDetectHelp");
 const settingsMenuButton = document.getElementById("settingsMenuButton");
 const settingsOverlay = document.getElementById("settingsOverlay");
 const settingsCloseButton = document.getElementById("settingsCloseButton");
@@ -315,6 +321,7 @@ function updateFolderModeUi(refreshFileList = false) {
 
   if (document.body) document.body.classList.toggle("folderModeActive", active);
   if (queueAllFolderButton) queueAllFolderButton.classList.toggle("hidden", !active);
+  if (folderModeDetectHelp) folderModeDetectHelp.classList.toggle("hidden", !active);
 
   if (typeof folderNavigator !== "undefined" && folderNavigator) folderNavigator.classList.toggle("hidden", !active);
   if (typeof exitFolderModeButton !== "undefined" && exitFolderModeButton) exitFolderModeButton.classList.toggle("hidden", !folderMode);
@@ -961,12 +968,29 @@ function applyRegionColor(regionId, color) {
   }
 }
 
-function outputFilename(show, season, episode, label) {
-  const safeShow = (show || "Show").trim() || "Show";
+function cleanFilenamePart(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ");
+}
+
+function currentFilenameSuffix() {
+  return filenameSuffixInput ? cleanFilenamePart(filenameSuffixInput.value) : "";
+}
+
+function outputFilename(show, season, episode, label, userSuffix = "") {
+  const safeShow = cleanFilenamePart(show) || "Show";
   const ep = String(episode).padStart(2, "0");
   const seasonText = String(Number(season) || 1).padStart(2, "0");
-  const suffix = label && label !== "Episode" ? ` - ${label}` : "";
-  return `${safeShow} - S${seasonText}E${ep}${suffix}.mkv`;
+  const extras = [];
+
+  const cleanSuffix = cleanFilenamePart(userSuffix);
+  if (cleanSuffix) extras.push(cleanSuffix);
+  if (label && label !== "Episode") extras.push(cleanFilenamePart(label));
+
+  const suffixText = extras.length ? ` - ${extras.join(" - ")}` : "";
+  return `${safeShow} - S${seasonText}E${ep}${suffixText}.mkv`;
 }
 
 function renderPreviewNames() {
@@ -983,6 +1007,7 @@ function renderPreviewNames() {
   const checkedRegions = allRegions.filter(r => r.include !== false);
   const show = document.getElementById("showName").value;
   const season = Number(document.getElementById("season").value) || 1;
+  const filenameSuffix = currentFilenameSuffix();
   let episode = Number(document.getElementById("startEpisode").value) || 1;
 
   previewNamesList.innerHTML = "";
@@ -1000,7 +1025,7 @@ function renderPreviewNames() {
     row.className = "previewNameRow";
     row.innerHTML = `
       <span class="previewDot" style="background:${color}"></span>
-      <span>${escapeHtml(outputFilename(show, season, episode, r.label))}</span>
+      <span>${escapeHtml(outputFilename(show, season, episode, r.label, filenameSuffix))}</span>
     `;
     previewNamesList.appendChild(row);
     episode += 1;
@@ -1014,6 +1039,7 @@ function renderFolderPreviewNames() {
 
   const show = document.getElementById("showName").value;
   const season = Number(document.getElementById("season").value) || 1;
+  const filenameSuffix = currentFilenameSuffix();
   let episode = Number(document.getElementById("startEpisode").value) || 1;
   let rendered = 0;
 
@@ -1031,7 +1057,7 @@ function renderFolderPreviewNames() {
       row.innerHTML = `
         <span class="previewDot" style="background:${color}"></span>
         <span>
-          ${escapeHtml(outputFilename(show, season, episode, r.label))}
+          ${escapeHtml(outputFilename(show, season, episode, r.label, filenameSuffix))}
           <span class="folderPreviewFile">${escapeHtml(item.name)}</span>
         </span>
       `;
@@ -1756,6 +1782,7 @@ function buildSplitPayload() {
 
   const show = document.getElementById("showName").value;
   const season = Number(document.getElementById("season").value);
+  const suffix = currentFilenameSuffix();
   const startEpisode = folderMode ? folderStartEpisodeForIndex(folderIndex) : Number(document.getElementById("startEpisode").value);
 
   return {
@@ -1766,8 +1793,33 @@ function buildSplitPayload() {
     regions: checked.map(r => ({start: r.start, end: r.end, label: r.label})),
     show,
     season,
+    suffix,
     start_episode: startEpisode
   };
+}
+
+function showQueueTab(tabName) {
+  const showJobs = tabName === "jobs";
+
+  if (queuedSplitsTabButton) {
+    queuedSplitsTabButton.classList.toggle("active", !showJobs);
+    queuedSplitsTabButton.setAttribute("aria-selected", showJobs ? "false" : "true");
+  }
+
+  if (jobsTabButton) {
+    jobsTabButton.classList.toggle("active", showJobs);
+    jobsTabButton.setAttribute("aria-selected", showJobs ? "true" : "false");
+  }
+
+  if (queuedSplitsTabPanel) {
+    queuedSplitsTabPanel.classList.toggle("hidden", showJobs);
+    queuedSplitsTabPanel.classList.toggle("active", !showJobs);
+  }
+
+  if (jobsTabPanel) {
+    jobsTabPanel.classList.toggle("hidden", !showJobs);
+    jobsTabPanel.classList.toggle("active", showJobs);
+  }
 }
 
 function payloadEpisodeLabel(payload) {
@@ -1793,6 +1845,7 @@ function buildFolderPayloadForItem(item, index) {
 
   const show = document.getElementById("showName").value;
   const season = Number(document.getElementById("season").value) || 1;
+  const suffix = currentFilenameSuffix();
   const startEpisode = folderStartEpisodeForIndex(index);
 
   return {
@@ -1803,6 +1856,7 @@ function buildFolderPayloadForItem(item, index) {
     regions: regions.map(r => ({start: r.start, end: r.end, label: r.label || "Episode"})),
     show,
     season,
+    suffix,
     start_episode: startEpisode
   };
 }
@@ -1827,6 +1881,7 @@ function queueAllFolderSplits() {
   }
 
   pendingQueue.push(...payloads);
+  showQueueTab("queue");
   renderPendingQueue();
   renderPreviewNames();
   statusPill.textContent = `Queued ${payloads.length} folder video split job${payloads.length === 1 ? "" : "s"}`;
@@ -1837,6 +1892,7 @@ function queueCurrentSplit() {
   if (!payload) return;
 
   pendingQueue.push(payload);
+  showQueueTab("queue");
   renderPendingQueue();
   renderPreviewNames();
   statusPill.textContent = `Queued ${pendingQueue.length} split job${pendingQueue.length === 1 ? "" : "s"}`;
@@ -1845,6 +1901,8 @@ function queueCurrentSplit() {
 async function splitNow() {
   const payload = buildSplitPayload();
   if (!payload) return;
+
+  showQueueTab("jobs");
 
   splitStatusMode = "single";
   splitTrackedJobIds = new Set();
@@ -1898,6 +1956,7 @@ async function startSplitJob(payload, displayLabel = null) {
       regions: payload.regions,
       show: payload.show,
       season: payload.season,
+      suffix: payload.suffix || "",
       start_episode: payload.start_episode
     })
   });
@@ -1941,6 +2000,8 @@ async function waitForJobCompletion(jobId) {
 
 async function runQueue() {
   if (!pendingQueue.length) return alert("There are no queued splits.");
+
+  showQueueTab("jobs");
 
   const toRun = [...pendingQueue];
   pendingQueue = [];
@@ -2390,6 +2451,8 @@ document.getElementById("splitButton").onclick = queueCurrentSplit;
 if (queueAllFolderButton) queueAllFolderButton.onclick = queueAllFolderSplits;
 document.getElementById("runQueueButton").onclick = runQueue;
 document.getElementById("clearQueueButton").onclick = clearQueue;
+if (queuedSplitsTabButton) queuedSplitsTabButton.onclick = () => showQueueTab("queue");
+if (jobsTabButton) jobsTabButton.onclick = () => showQueueTab("jobs");
 document.getElementById("frameBack").onclick = () => stepFrame(-1);
 document.getElementById("frameForward").onclick = () => stepFrame(1);
 document.getElementById("zoom").addEventListener("input", applyWaveformZoom);
@@ -2398,6 +2461,7 @@ document.getElementById("startEpisode").addEventListener("change", renderRegions
 document.getElementById("startEpisode").addEventListener("keyup", renderRegions);
 document.getElementById("showName").addEventListener("input", renderPreviewNames);
 document.getElementById("season").addEventListener("input", renderPreviewNames);
+if (filenameSuffixInput) filenameSuffixInput.addEventListener("input", renderPreviewNames);
 search.oninput = renderFiles;
 
 restoreFastPreviewSetting();

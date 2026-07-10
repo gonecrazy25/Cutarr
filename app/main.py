@@ -70,6 +70,7 @@ class SplitRequest(BaseModel):
     regions: List[Region] = Field(default_factory=list)
     show: str = "Show"
     season: int = 1
+    suffix: str = ""
     start_episode: int = 1
 
 class DetectionRequest(BaseModel):
@@ -345,7 +346,7 @@ def api_split(req: SplitRequest):
             if r.end > r.start:
                 clean_regions.append({"start": r.start, "end": r.end, "label": r.label})
 
-        job_id = create_split_job(media, clean_regions, req.show, req.season, req.start_episode)
+        job_id = create_split_job(media, clean_regions, req.show, req.season, req.start_episode, req.suffix)
         return {"job_id": job_id}
 
     except Exception as exc:
